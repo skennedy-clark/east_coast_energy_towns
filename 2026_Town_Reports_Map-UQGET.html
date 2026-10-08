@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Regional Town Reports</title>
+<style>
+:root{
+  --ink:#25343a;--muted:#66777d;--line:#d8dfdf;--water:#edf4f4;
+  --land:#e9ede8;--land2:#f1f3ef;--border:#b9c2be;--accent:#51247A;
+  --accent2:#a84a4d;--white:#fff;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;color:var(--ink);background:transparent}
+.map-wrap{max-width:760px;margin:0 auto;background:var(--white)}
+.map-area{position:relative;background:var(--water);overflow:hidden}
+svg{display:block;width:100%;height:auto}
+.state-name{font-size:16px;font-weight:700;letter-spacing:.13em;fill:#a9b2ae;pointer-events:none}
+.coast{fill:var(--land);stroke:var(--border);stroke-width:1.4;vector-effect:non-scaling-stroke}
+.nsw{fill:var(--land2)}
+.state-boundary{fill:none;stroke:#9fa9a5;stroke-width:2;stroke-dasharray:7 5;vector-effect:non-scaling-stroke}
+.town{cursor:pointer;outline:none}
+.town circle{fill:var(--accent);stroke:#fff;stroke-width:2.8;vector-effect:non-scaling-stroke;transition:.15s}
+.town text{font-size:12.5px;font-weight:700;fill:var(--ink);paint-order:stroke;stroke:#fff;stroke-width:4.5px;stroke-linejoin:round;pointer-events:none}
+.town:hover circle,.town:focus circle{fill:var(--accent2);r:7}
+.town:hover text,.town:focus text{fill:var(--accent2)}
+.town:focus-visible circle{stroke:#182326;stroke-width:4}
+.loading{position:absolute;left:18px;bottom:16px;background:#fff;border:1px solid var(--line);padding:8px 11px;font-size:12px;color:var(--muted)}
+.error{position:absolute;left:18px;right:18px;bottom:16px;background:#fff;border:1px solid #d8b8b8;padding:10px 12px;font-size:12px;color:#6e292c}
+@media(max-width:700px){
+  .town text{font-size:12px}.state-name{font-size:15px}
+}
+</style>
+</head>
+<body>
+<div class="map-wrap">
+
+
+  <div class="map-area">
+    <svg id="map" viewBox="235 90 575 820" role="img"
+         aria-labelledby="mapTitle mapDesc">
+      <title id="mapTitle">Regional town reports map</title>
+      <desc id="mapDesc">A simplified real geographic map of Queensland and northern New South Wales with eleven clickable town report locations.</desc>
+      <rect width="1120" height="790" fill="#edf4f4"/>
+      <g id="states"></g>
+      <g id="boundary"></g>
+      <g id="labels"></g>
+      <g id="towns"></g>
+    </svg>
+    <div id="loading" class="loading">Loading map geometry…</div>
+  </div>
+
+
+</div>
+
+<script type="module">
+(async function(){
+  const towns = [
+    {name:"Dysart",lat:-22.5855,lon:148.3508,dx:11,dy:-10,url:"https://gas-energy.centre.uq.edu.au/files/15676/Dysart%20Report%202026%20-%20Final.pdf"},
+    {name:"Moranbah",lat:-22.0030,lon:148.0433,dx:11,dy:-10,url:"https://gas-energy.centre.uq.edu.au/files/15679/Moranbah%20Report%202026%20-%20Final.pdf"},
+    {name:"Wandoan",lat:-26.1230,lon:149.9611,dx:5,dy:-10,url:"https://gas-energy.centre.uq.edu.au/files/15674/Wandoan%20Report%202026%20-%20Final.pdf"},
+    {name:"Chinchilla",lat:-26.7417,lon:150.6225,dx:-18,dy:-16,url:"https://gas-energy.centre.uq.edu.au/files/15673/Chinchilla%20Report%202026%20-%20Final.pdf"},
+    {name:"Miles",lat:-26.6560,lon:150.1847,dx:-35,dy:-10,url:"https://gas-energy.centre.uq.edu.au/files/15678/Miles%20Report%202026%20-%20Final.pdf"},
+    {name:"Wallumbilla",lat:-26.5833,lon:149.1833,dx:-30,dy:22,url:"https://gas-energy.centre.uq.edu.au/files/15684/Wallumbilla%20Report%202026%20-%20Final.pdf"},
+    {name:"Roma",lat:-26.5675,lon:148.7886,dx:-38,dy:-10,url:"https://gas-energy.centre.uq.edu.au/files/15681/Roma%20Report%202026%20-%20Final.pdf"},
+    {name:"Dalby",lat:-27.1813,lon:151.2661,dx:11,dy:-10,url:"https://gas-energy.centre.uq.edu.au/files/15675/Dalby%20Report%202026%20-%20Final.pdf"},
+    {name:"Tara",lat:-27.2764,lon:150.4570,dx:5,dy:18,url:"https://gas-energy.centre.uq.edu.au/files/15682/Tara%20Report%202026%20-%20Final.pdf"},
+    {name:"Toowoomba",lat:-27.5598,lon:151.9507,dx:11,dy:-10,url:"https://gas-energy.centre.uq.edu.au/files/15683/Toowoomba%20Report%202026%20-%20Final.pdf"},
+    {name:"Narrabri",lat:-30.3249,lon:149.7827,dx:11,dy:-10,url:"https://gas-energy.centre.uq.edu.au/files/15680/Narrabri%20Report%202026%20-%20Final.pdf"}
+  ];
+
+  const loading=document.getElementById("loading");
+  const map=document.getElementById("map");
+
+  // Natural Earth 1:50m Admin-1 states/provinces, loaded directly from jsDelivr.
+  // It is a simplified cartographic dataset suitable for this lightweight embedded map.
+  const url="https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@ca96624a/geojson/ne_50m_admin_1_states_provinces.geojson";
+  const d3=await import("https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm");
+  const geo=await d3.json(url);
+
+  const wanted=geo.features.filter(f=>{
+    const p=f.properties||{};
+    const name=String(p.name||p.name_en||"").toLowerCase();
+    const admin=String(p.admin||p.adm0name||"").toLowerCase();
+    return admin==="australia" && (name==="queensland" || name==="new south wales");
+  });
+
+  const projection=d3.geoMercator()
+    .center([150.05,-26.15])
+    .scale(3750)
+    .translate([480,525]);
+
+  const path=d3.geoPath(projection);
+  const states=document.getElementById("states");
+  const labels=document.getElementById("labels");
+  const boundary=document.getElementById("boundary");
+  const townLayer=document.getElementById("towns");
+
+  wanted.forEach(f=>{
+    const p=f.properties||{};
+    const el=document.createElementNS("http://www.w3.org/2000/svg","path");
+    el.setAttribute("d",path(f));
+    el.setAttribute("class","coast "+(String(p.name||"").toLowerCase()==="new south wales"?"nsw":""));
+    states.appendChild(el);
+  });
+
+  // The two real state polygons meet at the actual QLD/NSW border.
+  // Their shared boundary is therefore supplied by the source geometry itself.
+
+  const qld=wanted.find(f=>String(f.properties?.name||"").toLowerCase()==="queensland");
+  const nsw=wanted.find(f=>String(f.properties?.name||"").toLowerCase()==="new south wales");
+  if(qld){
+    const pt=projection([149.8,-24.0]);
+    labels.insertAdjacentHTML("beforeend",'<text x="'+pt[0]+'" y="'+pt[1]+'" text-anchor="middle" class="state-name">QUEENSLAND</text>');
+  }
+  if(nsw){
+    const pt=projection([150.0,-29.5]);
+    labels.insertAdjacentHTML("beforeend",'<text x="'+pt[0]+'" y="'+pt[1]+'" text-anchor="middle" class="state-name">NEW SOUTH WALES</text>');
+  }
+
+  towns.forEach(t=>{
+    const [cx,cy]=projection([t.lon,t.lat]);
+    const g=document.createElementNS("http://www.w3.org/2000/svg","a");
+    g.setAttribute("class","town");
+    g.setAttribute("href",t.url);
+    g.setAttribute("target","_blank");
+    g.setAttribute("rel","noopener");
+    g.setAttribute("aria-label","Open "+t.name+" 2026 report");
+
+    const c=document.createElementNS("http://www.w3.org/2000/svg","circle");
+    c.setAttribute("cx",cx);c.setAttribute("cy",cy);c.setAttribute("r","5.8");
+
+    const label=document.createElementNS("http://www.w3.org/2000/svg","text");
+    label.setAttribute("x",cx+t.dx);label.setAttribute("y",cy+t.dy);
+    label.textContent=t.name;
+
+    const title=document.createElementNS("http://www.w3.org/2000/svg","title");
+    title.textContent="Open "+t.name+" 2026 report";
+
+    g.append(c,label,title);townLayer.appendChild(g);
+  });
+
+  loading.remove();
+})().catch(err=>{
+  const loading=document.getElementById("loading");
+  loading.className="error";
+  loading.textContent="The map geometry could not be loaded. Please check the internet connection or host the map geometry locally.";
+  console.error(err);
+});
+</script>
+</body>
+</html>
